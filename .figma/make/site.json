@@ -1,0 +1,11 @@
+{
+  "title": "Atmos — Weather Forecast & Live Conditions",
+  "description": "Get real-time weather updates by entering a city name, displaying current temperature, humidity, and conditions in a user-friendly interface.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
