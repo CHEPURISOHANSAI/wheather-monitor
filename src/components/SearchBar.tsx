@@ -61,13 +61,19 @@ export default function SearchBar({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!query.trim()) return;
+    const clean = query.trim();
+    if (!clean) return;
     setShowDropdown(false);
-    onSearchQuery(query);
+    if (suggestions.length > 0) {
+      handleSelect(suggestions[0]);
+    } else {
+      onSearchQuery(clean);
+    }
   }
 
   function handleSelect(item: GeoLocationResult) {
-    setQuery(`${item.name}${item.country ? `, ${item.country}` : ""}`);
+    const locText = [item.name, item.admin1, item.country].filter(Boolean).join(", ");
+    setQuery(locText);
     setShowDropdown(false);
     onSelectCity(item.name, item.country, item.latitude, item.longitude);
   }
@@ -153,18 +159,24 @@ export default function SearchBar({
               key={`${item.name}-${item.latitude}-${item.longitude}-${idx}`}
               type="button"
               onClick={() => handleSelect(item)}
-              className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[#25372f] transition hover:bg-[#f3f7f4]"
+              className="group flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-medium text-[#25372f] transition hover:bg-[#f3f7f4]"
             >
-              <div className="flex items-center gap-2.5">
-                <MapPin className="size-4 text-[#607d71]" />
-                <span className="font-semibold">{item.name}</span>
-                {item.admin1 && (
-                  <span className="text-xs text-[#74827a]">{item.admin1}</span>
-                )}
+              <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                <MapPin className="size-4 shrink-0 text-[#607d71] group-hover:text-[#29443a]" />
+                <div className="truncate">
+                  <span className="font-semibold text-[#18221d]">{item.name}</span>
+                  {(item.admin1 || item.country) && (
+                    <span className="ml-1.5 text-xs text-[#74827a]">
+                      {[item.admin1, item.country].filter(Boolean).join(", ")}
+                    </span>
+                  )}
+                </div>
               </div>
-              <span className="text-xs font-bold uppercase tracking-wider text-[#8b9991]">
-                {item.countryCode || item.country}
-              </span>
+              {item.countryCode && (
+                <span className="shrink-0 rounded-md bg-[#edf2ee] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#687b71]">
+                  {item.countryCode}
+                </span>
+              )}
             </button>
           ))}
         </div>

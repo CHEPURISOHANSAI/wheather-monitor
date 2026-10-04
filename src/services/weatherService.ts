@@ -162,47 +162,201 @@ export async function searchCities(query: string): Promise<GeoLocationResult[]> 
   const clean = query.trim();
   if (!clean || clean.length < 2) return [];
 
-  const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
-    clean
-  )}&count=6&language=en&format=json`;
-
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Failed to search cities");
-  const data = await res.json();
-
-  if (!data.results || !Array.isArray(data.results)) {
-    return [];
+  // 1. Direct Coordinates check: e.g. "17.385, 78.486" or "17.385 78.486"
+  const coordMatch = clean.match(/^([-+]?\d{1,2}(?:\.\d+)?)[,\s]+([-+]?\d{1,3}(?:\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lon = parseFloat(coordMatch[2]);
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      const rev = await reverseGeocode(lat, lon);
+      return [
+        {
+          name: rev.name || `${lat.toFixed(3)}, ${lon.toFixed(3)}`,
+          country: rev.country || "Custom GPS",
+          countryCode: "GPS",
+          admin1: `Lat: ${lat.toFixed(2)}, Lon: ${lon.toFixed(2)}`,
+          latitude: lat,
+          longitude: lon,
+          label: `${rev.name || 'Location'}, ${rev.country}`,
+        },
+      ];
+    }
   }
 
-  return data.results.map((item: any) => ({
-    name: item.name,
-    country: item.country || "",
-    countryCode: item.country_code || "",
-    admin1: item.admin1 || "",
-    latitude: item.latitude,
-    longitude: item.longitude,
-  }));
+  const collected: GeoLocationResult[] = [];
+
+  // 2. Parallel search across Open-Meteo and Photon (OpenStreetMap)
+  const openMeteoPromise = (async () => {
+    try {
+      const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
+        clean
+      )}&count=8&language=en&format=json`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!data.results || !Array.isArray(data.results)) return [];
+
+      return data.results.map((item: any) => ({
+        name: item.name,
+        country: item.country || "",
+        countryCode: item.country_code || "",
+        admin1: item.admin1 || "",
+        latitude: item.latitude,
+        longitude: item.longitude,
+        label: [item.name, item.admin1, item.country].filter(Boolean).join(", "),
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
+  const photonPromise = (async () => {
+    try {
+      const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(clean)}&limit=8`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const data = await res.json();
+      if (!data.features || !Array.isArray(data.features)) return [];
+
+      return data.features.map((f: any) => {
+        const p = f.properties || {};
+        const coords = f.geometry?.coordinates || [0, 0];
+        const name = p.name || p.city || p.locality || p.district || clean;
+        const country = p.country || "";
+        const countryCode = (p.countrycode || "").toUpperCase();
+        const admin1 = p.state || p.county || p.district || "";
+
+        return {
+          name,
+          country,
+          countryCode,
+          admin1,
+          latitude: coords[1],
+          longitude: coords[0],
+          label: [name, admin1, country].filter(Boolean).join(", "),
+        };
+      });
+    } catch {
+      return [];
+    }
+  })();
+
+  const [omResults, photonResults] = await Promise.all([openMeteoPromise, photonPromise]);
+  collected.push(...omResults, ...photonResults);
+
+  // 3. Fallback: If both yielded 0 results, try Nominatim & simplified token search
+  if (collected.length === 0) {
+    try {
+      const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+        clean
+      )}&format=json&addressdetails=1&limit=6`;
+      const res = await fetch(nomUrl, { headers: { "User-Agent": "AtmosWeatherApp/1.0" } });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          for (const item of data) {
+            const addr = item.address || {};
+            const name =
+              addr.city ||
+              addr.town ||
+              addr.village ||
+              addr.suburb ||
+              addr.neighbourhood ||
+              addr.county ||
+              item.name ||
+              clean;
+            const country = addr.country || "";
+            const countryCode = (addr.country_code || "").toUpperCase();
+            const admin1 = addr.state || addr.county || "";
+
+            collected.push({
+              name,
+              country,
+              countryCode,
+              admin1,
+              latitude: parseFloat(item.lat),
+              longitude: parseFloat(item.lon),
+              label: item.display_name,
+            });
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 4. Token Fallback: If still 0 and query has commas (e.g. "Gachibowli, Hyderabad"), try first token
+  if (collected.length === 0 && clean.includes(",")) {
+    const firstToken = clean.split(",")[0].trim();
+    if (firstToken && firstToken.length >= 2 && firstToken !== clean) {
+      return searchCities(firstToken);
+    }
+  }
+
+  // 5. Deduplicate results based on proximity (< 8km) or identical name + country
+  const deduplicated: GeoLocationResult[] = [];
+
+  for (const item of collected) {
+    if (isNaN(item.latitude) || isNaN(item.longitude)) continue;
+
+    const isDuplicate = deduplicated.some((existing) => {
+      const latDiff = Math.abs(existing.latitude - item.latitude);
+      const lonDiff = Math.abs(existing.longitude - item.longitude);
+      const closeLocation = latDiff < 0.08 && lonDiff < 0.08;
+      const sameName =
+        existing.name.toLowerCase() === item.name.toLowerCase() &&
+        existing.country.toLowerCase() === item.country.toLowerCase();
+      return closeLocation || sameName;
+    });
+
+    if (!isDuplicate) {
+      deduplicated.push(item);
+    }
+  }
+
+  return deduplicated.slice(0, 8);
 }
 
 export async function reverseGeocode(lat: number, lon: number): Promise<{ name: string; country: string }> {
+  // Try OpenStreetMap Nominatim
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`;
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=12`;
     const res = await fetch(url, { headers: { "User-Agent": "AtmosWeatherApp/1.0" } });
     if (res.ok) {
       const data = await res.json();
+      const addr = data.address || {};
       const city =
-        data.address?.city ||
-        data.address?.town ||
-        data.address?.village ||
-        data.address?.county ||
-        "Current Location";
-      const country = data.address?.country || "";
+        addr.city ||
+        addr.suburb ||
+        addr.town ||
+        addr.village ||
+        addr.neighbourhood ||
+        addr.county ||
+        addr.state_district ||
+        "My Location";
+      const country = addr.country || "";
       return { name: city, country };
     }
   } catch {
     // fallback
   }
-  return { name: "Current Location", country: "" };
+
+  // Fallback to BigDataCloud free reverse geocode
+  try {
+    const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`;
+    const bdcRes = await fetch(bdcUrl);
+    if (bdcRes.ok) {
+      const data = await bdcRes.json();
+      const name = data.locality || data.city || data.principalSubdivision || "My Location";
+      const country = data.countryName || "";
+      return { name, country };
+    }
+  } catch {
+    // fallback
+  }
+
+  return { name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, country: "" };
 }
 
 export async function fetchWeatherFromOpenMeteo(

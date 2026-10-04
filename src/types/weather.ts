@@ -73,4 +73,5 @@ export type GeoLocationResult = {
   admin1?: string;
   latitude: number;
   longitude: number;
+  label?: string;
 };
