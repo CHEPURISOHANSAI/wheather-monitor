@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Compass, Settings2 } from "lucide-react";
+import { AlertCircle, Compass, Layers, Settings2, Sparkles } from "lucide-react";
 import { FullWeatherData } from "./types/weather";
 import {
   fetchWeatherFromOpenMeteo,
@@ -12,8 +12,13 @@ import SearchBar from "./components/SearchBar";
 import HourlyForecast from "./components/HourlyForecast";
 import DailyForecast from "./components/DailyForecast";
 import MetricCards from "./components/MetricCards";
+import WeatherInsights from "./components/WeatherInsights";
+import AirQualityCard from "./components/AirQualityCard";
+import AstronomyCard from "./components/AstronomyCard";
 import SavedCities from "./components/SavedCities";
 import SettingsModal from "./components/SettingsModal";
+import WeatherRadarModal from "./components/WeatherRadarModal";
+import ShareWeatherModal from "./components/ShareWeatherModal";
 
 export default function App() {
   const [weatherData, setWeatherData] = useState<FullWeatherData | null>(null);
@@ -23,6 +28,8 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRadarOpen, setIsRadarOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
 
   // User preferences persisted in localStorage
   const [unit, setUnit] = useState<"C" | "F">(() => {
@@ -130,7 +137,7 @@ export default function App() {
         const top = results[0];
         await loadWeatherByCoords(top.latitude, top.longitude, top.name, top.country);
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Error searching city.");
+        setErrorMessage(err instanceof Error ? err.message : "Error searching location.");
         setIsLoading(false);
       }
     },
@@ -195,7 +202,7 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-[#dfe7e2] p-3 text-[#18221d] sm:p-5 lg:flex lg:items-center lg:justify-center lg:p-8">
-      <div className="relative mx-auto grid min-h-[calc(100vh-1.5rem)] w-full max-w-[1320px] overflow-hidden rounded-[1.75rem] bg-[#f6f7f2] shadow-[0_32px_100px_rgba(26,44,35,0.17)] sm:min-h-[calc(100vh-2.5rem)] sm:rounded-[2.25rem] lg:min-h-[min(860px,calc(100vh-4rem))] lg:grid-cols-[1.12fr_1.28fr]">
+      <div className="relative mx-auto grid min-h-[calc(100vh-1.5rem)] w-full max-w-[1340px] overflow-hidden rounded-[1.75rem] bg-[#f6f7f2] shadow-[0_32px_100px_rgba(26,44,35,0.17)] sm:min-h-[calc(100vh-2.5rem)] sm:rounded-[2.25rem] lg:min-h-[min(880px,calc(100vh-4rem))] lg:grid-cols-[1.1fr_1.3fr]">
         {/* Left Section: Hero Visual Display */}
         <HeroBanner
           weather={weatherData ? weatherData.current : null}
@@ -205,29 +212,44 @@ export default function App() {
           isRefreshing={isRefreshing}
           isFavorite={isCurrentFavorite}
           onToggleFavorite={handleToggleFavorite}
+          onOpenRadar={() => setIsRadarOpen(true)}
+          onOpenShare={() => setIsShareOpen(true)}
         />
 
         {/* Right Section: Interactive Meteorological Hub */}
-        <section className="flex flex-col p-6 sm:p-8 lg:p-10 max-h-[920px] overflow-y-auto">
-          {/* Header & Settings Trigger */}
+        <section className="flex flex-col p-6 sm:p-8 lg:p-10 max-h-[940px] overflow-y-auto">
+          {/* Header & Controls */}
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#86928b]">
-                Weather Station
+                Atmospheric Station
               </p>
               <h2 className="mt-1 text-2xl font-bold tracking-tight text-[#192721] sm:text-3xl">
                 Explore a city
               </h2>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(true)}
-              title="Open preferences & settings"
-              className="flex size-11 items-center justify-center rounded-2xl border border-[#dbe1dd] bg-white text-[#52635a] shadow-sm transition hover:border-[#9ab1a4] hover:bg-[#f1f5f2] active:scale-95"
-            >
-              <Settings2 className="size-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              {weatherData && (
+                <button
+                  type="button"
+                  onClick={() => setIsRadarOpen(true)}
+                  title="Open live precipitation radar"
+                  className="flex size-11 items-center justify-center rounded-2xl border border-[#dbe1dd] bg-white text-[#38bdf8] shadow-sm transition hover:border-[#9ab1a4] hover:bg-[#f1f5f2] active:scale-95"
+                >
+                  <Layers className="size-5" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsSettingsOpen(true)}
+                title="Open preferences & settings"
+                className="flex size-11 items-center justify-center rounded-2xl border border-[#dbe1dd] bg-white text-[#52635a] shadow-sm transition hover:border-[#9ab1a4] hover:bg-[#f1f5f2] active:scale-95"
+              >
+                <Settings2 className="size-5" />
+              </button>
+            </div>
           </div>
 
           {/* Search Bar with autocomplete & GPS */}
@@ -267,11 +289,22 @@ export default function App() {
           {/* Forecast details when loaded */}
           {weatherData && (
             <div className="animate-[fadeUp_300ms_ease-out]">
+              {/* Smart Insights & Personalized Advisory */}
+              {weatherData.insights && weatherData.insights.length > 0 && (
+                <WeatherInsights insights={weatherData.insights} />
+              )}
+
               {/* Hourly 24h timeline */}
               <HourlyForecast items={weatherData.hourly} unit={unit} />
 
               {/* 8 Vital atmospheric metrics */}
               <MetricCards weather={weatherData.current} unit={unit} />
+
+              {/* Air Quality Index Breakdown */}
+              <AirQualityCard airQuality={weatherData.airQuality} />
+
+              {/* Astronomy & Solar Arc */}
+              <AstronomyCard astronomy={weatherData.astronomy} />
 
               {/* 7-day extended outlook */}
               <DailyForecast items={weatherData.daily} unit={unit} />
@@ -313,6 +346,27 @@ export default function App() {
         customApiKey={customApiKey}
         onSaveApiKey={handleSaveApiKey}
       />
+
+      {/* Live Precipitation Radar Map Modal */}
+      {weatherData && (
+        <WeatherRadarModal
+          isOpen={isRadarOpen}
+          onClose={() => setIsRadarOpen(false)}
+          lat={weatherData.current.latitude}
+          lon={weatherData.current.longitude}
+          cityName={weatherData.current.cityName}
+        />
+      )}
+
+      {/* Share Weather Summary Modal */}
+      {weatherData && (
+        <ShareWeatherModal
+          isOpen={isShareOpen}
+          onClose={() => setIsShareOpen(false)}
+          weather={weatherData.current}
+          unit={unit}
+        />
+      )}
     </main>
   );
 }

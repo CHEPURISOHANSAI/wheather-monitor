@@ -59,11 +59,45 @@ export type DailyForecastItem = {
   uvIndex: number;
 };
 
+export type AirQualityData = {
+  aqi: number;
+  category: "Good" | "Moderate" | "Unhealthy for Sensitive Groups" | "Unhealthy" | "Very Unhealthy" | "Hazardous";
+  color: string;
+  advice: string;
+  pm25: number;
+  pm10: number;
+  o3: number;
+  no2: number;
+  so2: number;
+  co: number;
+};
+
+export type AstronomyData = {
+  sunriseTime: string;
+  sunsetTime: string;
+  dayLengthText: string;
+  sunProgressPercent: number;
+  isDay: boolean;
+  moonPhaseName: string;
+  moonIlluminationPercent: number;
+};
+
+export type WeatherInsight = {
+  id: string;
+  type: "umbrella" | "sunscreen" | "clothing" | "wind" | "sport" | "air";
+  title: string;
+  description: string;
+  severity: "info" | "advisory" | "warning";
+};
+
 export type FullWeatherData = {
   current: CurrentWeather;
   hourly: HourlyForecastItem[];
   daily: DailyForecastItem[];
-  source: 'open-meteo' | 'open-weather';
+  airQuality?: AirQualityData;
+  astronomy?: AstronomyData;
+  insights?: WeatherInsight[];
+  source: "open-meteo" | "open-weather";
 };
 
 export type GeoLocationResult = {

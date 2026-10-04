@@ -1,11 +1,15 @@
 import {
+  AirQualityData,
+  AstronomyData,
   CurrentWeather,
   DailyForecastItem,
   FullWeatherData,
   GeoLocationResult,
   HourlyForecastItem,
   WeatherCondition,
+  WeatherInsight,
 } from "../types/weather";
+import { calculateDayProgress, getMoonPhase } from "./astronomyService";
 
 const WEATHER_WALLPAPERS = {
   clearDay:
@@ -359,6 +363,156 @@ export async function reverseGeocode(lat: number, lon: number): Promise<{ name: 
   return { name: `${lat.toFixed(2)}, ${lon.toFixed(2)}`, country: "" };
 }
 
+export async function fetchAirQuality(lat: number, lon: number): Promise<AirQualityData | undefined> {
+  try {
+    const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,ozone,sulphur_dioxide`;
+    const res = await fetch(aqiUrl);
+    if (!res.ok) return undefined;
+    const data = await res.json();
+    const curr = data.current;
+    if (!curr) return undefined;
+
+    const aqiVal = Math.round(curr.us_aqi || 38);
+    let category: AirQualityData["category"] = "Good";
+    let color = "#10b981";
+    let advice = "Air quality is satisfactory and poses little to no risk.";
+
+    if (aqiVal <= 50) {
+      category = "Good";
+      color = "#10b981";
+      advice = "Air quality is ideal for outdoor activities.";
+    } else if (aqiVal <= 100) {
+      category = "Moderate";
+      color = "#f59e0b";
+      advice = "Air quality is acceptable; unusually sensitive individuals should take care.";
+    } else if (aqiVal <= 150) {
+      category = "Unhealthy for Sensitive Groups";
+      color = "#f97316";
+      advice = "Sensitive individuals should reduce prolonged outdoor exertion.";
+    } else if (aqiVal <= 200) {
+      category = "Unhealthy";
+      color = "#ef4444";
+      advice = "Wear a mask outdoors and minimize intense outdoor exercise.";
+    } else if (aqiVal <= 300) {
+      category = "Very Unhealthy";
+      color = "#a855f7";
+      advice = "Health alert: everyone may experience more serious health effects.";
+    } else {
+      category = "Hazardous";
+      color = "#7e22ce";
+      advice = "Emergency conditions: avoid outdoor exposure.";
+    }
+
+    return {
+      aqi: aqiVal,
+      category,
+      color,
+      advice,
+      pm25: Number((curr.pm2_5 || 0).toFixed(1)),
+      pm10: Number((curr.pm10 || 0).toFixed(1)),
+      o3: Number((curr.ozone || 0).toFixed(1)),
+      no2: Number((curr.nitrogen_dioxide || 0).toFixed(1)),
+      so2: Number((curr.sulphur_dioxide || 0).toFixed(1)),
+      co: Number((curr.carbon_monoxide || 0).toFixed(0)),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+export function generateWeatherInsights(
+  current: CurrentWeather,
+  daily: DailyForecastItem[],
+  aqi?: AirQualityData
+): WeatherInsight[] {
+  const insights: WeatherInsight[] = [];
+
+  // Umbrella & Rain check
+  if (
+    current.rainChance >= 40 ||
+    current.condition.main.toLowerCase().includes("rain") ||
+    current.condition.main.toLowerCase().includes("drizzle")
+  ) {
+    insights.push({
+      id: "umbrella",
+      type: "umbrella",
+      title: "Umbrella Recommended",
+      description: `Precipitation probability is ${current.rainChance}%. Carry an umbrella or rain jacket before heading out.`,
+      severity: "advisory",
+    });
+  } else if (daily[0]?.rainChance >= 50) {
+    insights.push({
+      id: "umbrella-later",
+      type: "umbrella",
+      title: "Rain Expected Later",
+      description: `Showers expected later today with a ${daily[0].rainChance}% probability.`,
+      severity: "info",
+    });
+  }
+
+  // Sun & UV check
+  if (current.uvIndex >= 6) {
+    insights.push({
+      id: "sunscreen",
+      type: "sunscreen",
+      title: "High UV Radiation",
+      description: `UV Index is ${current.uvIndex} (${current.uvDescription}). Apply SPF 30+ sunscreen and wear sunglasses.`,
+      severity: "advisory",
+    });
+  }
+
+  // Temperature & Clothing check
+  if (current.tempC <= 10) {
+    insights.push({
+      id: "clothing-cold",
+      type: "clothing",
+      title: "Bundle Up Warmly",
+      description: `Chilly conditions at ${current.tempC}°C (feels like ${current.feelsLikeC}°C). A heavy coat and layered warm clothing are recommended.`,
+      severity: "info",
+    });
+  } else if (current.tempC >= 32) {
+    insights.push({
+      id: "clothing-hot",
+      type: "clothing",
+      title: "Stay Hydrated & Cool",
+      description: `High heat at ${current.tempC}°C. Wear light, breathable clothing and drink plenty of fluids.`,
+      severity: "advisory",
+    });
+  } else if (current.tempC >= 18 && current.tempC <= 26 && current.rainChance < 20) {
+    insights.push({
+      id: "sport",
+      type: "sport",
+      title: "Ideal Outdoor Weather",
+      description: `Pleasant temperatures (${current.tempC}°C) and calm conditions make it great for running, walking, or sports.`,
+      severity: "info",
+    });
+  }
+
+  // Wind advisory
+  if (current.windSpeedKmh >= 35) {
+    insights.push({
+      id: "wind",
+      type: "wind",
+      title: "Brisk Winds",
+      description: `Gusts reaching ${current.windSpeedKmh} km/h (${current.windDirectionText}). Secure lightweight outdoor items.`,
+      severity: "advisory",
+    });
+  }
+
+  // Air Quality advisory
+  if (aqi && aqi.aqi > 100) {
+    insights.push({
+      id: "air-alert",
+      type: "air",
+      title: `Air Quality Alert (${aqi.category})`,
+      description: aqi.advice,
+      severity: aqi.aqi > 150 ? "warning" : "advisory",
+    });
+  }
+
+  return insights;
+}
+
 export async function fetchWeatherFromOpenMeteo(
   lat: number,
   lon: number,
@@ -367,7 +521,11 @@ export async function fetchWeatherFromOpenMeteo(
 ): Promise<FullWeatherData> {
   const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation_probability,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max&timezone=auto`;
 
-  const res = await fetch(forecastUrl);
+  // Fetch forecast and air quality concurrently
+  const [res, airQuality] = await Promise.all([
+    fetch(forecastUrl),
+    fetchAirQuality(lat, lon),
+  ]);
   if (!res.ok) {
     throw new Error("Unable to fetch weather forecast right now. Please try again.");
   }
@@ -495,10 +653,27 @@ export async function fetchWeatherFromOpenMeteo(
     updatedAt: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
   };
 
+  const solar = calculateDayProgress(todayDaily.sunriseTime, todayDaily.sunsetTime, isDay);
+  const moon = getMoonPhase();
+  const astronomy: AstronomyData = {
+    sunriseTime: todayDaily.sunriseTime,
+    sunsetTime: todayDaily.sunsetTime,
+    dayLengthText: solar.dayLengthText,
+    sunProgressPercent: solar.progressPercent,
+    isDay,
+    moonPhaseName: moon.name,
+    moonIlluminationPercent: moon.illumination,
+  };
+
+  const insights = generateWeatherInsights(currentWeather, daily, airQuality);
+
   return {
     current: currentWeather,
     hourly,
     daily,
+    airQuality,
+    astronomy,
+    insights,
     source: "open-meteo",
   };
 }

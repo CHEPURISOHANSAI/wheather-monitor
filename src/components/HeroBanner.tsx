@@ -1,6 +1,14 @@
-import { MapPin, RefreshCw, Star, Thermometer } from "lucide-react";
+import {
+  Map,
+  MapPin,
+  RefreshCw,
+  Share2,
+  Star,
+  Thermometer,
+} from "lucide-react";
 import { CurrentWeather } from "../types/weather";
 import WeatherIcon from "./WeatherIcon";
+import AmbientSoundPlayer from "./AmbientSoundPlayer";
 
 type HeroBannerProps = {
   weather: CurrentWeather | null;
@@ -10,6 +18,8 @@ type HeroBannerProps = {
   isRefreshing: boolean;
   isFavorite: boolean;
   onToggleFavorite: () => void;
+  onOpenRadar: () => void;
+  onOpenShare: () => void;
 };
 
 export default function HeroBanner({
@@ -20,6 +30,8 @@ export default function HeroBanner({
   isRefreshing,
   isFavorite,
   onToggleFavorite,
+  onOpenRadar,
+  onOpenShare,
 }: HeroBannerProps) {
   const currentDate = new Intl.DateTimeFormat("en", {
     weekday: "long",
@@ -58,28 +70,58 @@ export default function HeroBanner({
             <span className="text-base font-bold tracking-tight">Atmos</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Ambient soundscape toggle */}
+            <AmbientSoundPlayer weatherMain={weather?.condition.main} />
+
+            {/* Units button */}
             <button
               onClick={onToggleUnit}
               title={`Switch to °${unit === "C" ? "F" : "C"}`}
-              className="group flex items-center gap-1.5 rounded-full border border-white/25 bg-black/20 px-3.5 py-1.5 text-xs font-semibold backdrop-blur-md transition hover:bg-white/20 active:scale-95"
+              className="group flex items-center gap-1.5 rounded-full border border-white/25 bg-black/20 px-3 py-1.5 text-xs font-semibold backdrop-blur-md transition hover:bg-white/20 active:scale-95"
             >
               <Thermometer className="size-3.5 text-[#e9ff74]" />
               <span>°{unit}</span>
             </button>
 
+            {/* Weather actions (Radar, Share, Refresh) */}
             {weather && (
-              <button
-                onClick={onRefresh}
-                disabled={isRefreshing}
-                title="Refresh live data"
-                className="flex size-8 items-center justify-center rounded-full border border-white/25 bg-black/20 backdrop-blur-md transition hover:bg-white/20 active:scale-95 disabled:opacity-50"
-              >
-                <RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin text-[#e9ff74]" : "text-white"}`} />
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={onOpenRadar}
+                  title="Open live precipitation radar map"
+                  className="flex items-center gap-1.5 rounded-full border border-white/25 bg-black/20 px-3 py-1.5 text-xs font-semibold backdrop-blur-md transition hover:bg-white/20 active:scale-95"
+                >
+                  <Map className="size-3.5 text-[#38bdf8]" />
+                  <span className="hidden sm:inline">Radar</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onOpenShare}
+                  title="Share weather forecast"
+                  className="flex size-8 items-center justify-center rounded-full border border-white/25 bg-black/20 backdrop-blur-md transition hover:bg-white/20 active:scale-95"
+                >
+                  <Share2 className="size-3.5 text-white" />
+                </button>
+
+                <button
+                  onClick={onRefresh}
+                  disabled={isRefreshing}
+                  title="Refresh live data"
+                  className="flex size-8 items-center justify-center rounded-full border border-white/25 bg-black/20 backdrop-blur-md transition hover:bg-white/20 active:scale-95 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={`size-3.5 ${
+                      isRefreshing ? "animate-spin text-[#e9ff74]" : "text-white"
+                    }`}
+                  />
+                </button>
+              </>
             )}
 
-            <p className="hidden rounded-full border border-white/25 bg-black/20 px-4 py-1.5 text-xs font-medium backdrop-blur-md sm:block">
+            <p className="hidden rounded-full border border-white/25 bg-black/20 px-4 py-1.5 text-xs font-medium backdrop-blur-md xl:block">
               {currentDate}
             </p>
           </div>
@@ -92,7 +134,8 @@ export default function HeroBanner({
             <div className="mb-4 flex items-center gap-2 text-white/85">
               <MapPin className="size-4.5 text-[#e9ff74]" />
               <span className="text-sm font-semibold tracking-wide sm:text-base">
-                {weather.cityName}{weather.country ? `, ${weather.country}` : ""}
+                {weather.cityName}
+                {weather.country ? `, ${weather.country}` : ""}
               </span>
               <button
                 onClick={onToggleFavorite}
@@ -100,7 +143,9 @@ export default function HeroBanner({
                 className="ml-1.5 rounded-full p-1 text-white/70 transition hover:bg-white/20 hover:text-white"
               >
                 <Star
-                  className={`size-4 ${isFavorite ? "fill-[#e9ff74] text-[#e9ff74]" : "hover:text-[#e9ff74]"}`}
+                  className={`size-4 ${
+                    isFavorite ? "fill-[#e9ff74] text-[#e9ff74]" : "hover:text-[#e9ff74]"
+                  }`}
                 />
               </button>
             </div>
@@ -127,7 +172,10 @@ export default function HeroBanner({
                   {weather.condition.description}
                 </p>
                 <p className="mt-1.5 text-sm text-white/75 font-medium">
-                  Feels like {currentFeelsLike}° · {weather.rainChance > 0 ? `${weather.rainChance}% rain chance` : "Clear conditions"}
+                  Feels like {currentFeelsLike}° ·{" "}
+                  {weather.rainChance > 0
+                    ? `${weather.rainChance}% precipitation`
+                    : "Optimal conditions"}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -140,7 +188,9 @@ export default function HeroBanner({
           </div>
         ) : (
           <div className="max-w-lg">
-            <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#e9ff74]">Your local forecast</p>
+            <p className="mb-5 text-xs font-bold uppercase tracking-[0.2em] text-[#e9ff74]">
+              Your local forecast
+            </p>
             <h1 className="font-display text-5xl leading-[0.96] tracking-[-0.035em] sm:text-7xl">
               Weather that feels clear.
             </h1>
@@ -152,10 +202,8 @@ export default function HeroBanner({
 
         {/* Bottom footer credit & timezone */}
         <div className="flex items-center justify-between text-[11px] text-white/50">
-          <span>
-            {weather ? `Updated ${weather.updatedAt}` : "Global Meteorological Radar"}
-          </span>
-          <span className="text-white/40">Atmos v2.0</span>
+          <span>{weather ? `Updated ${weather.updatedAt}` : "Global Meteorological Radar"}</span>
+          <span className="text-white/40">Atmos v2.5</span>
         </div>
       </div>
     </section>
